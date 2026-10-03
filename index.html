@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI-Based Plant Disease Detection</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌿</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;800&family=Noto+Sans+Tamil:wght@400;600;700&family=Noto+Sans+Devanagari:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<header class="hdr">
+  <div class="brand"><span class="logo" aria-hidden="true">🌿</span><span data-i18n="appName">AI Plant Disease Detection</span></div>
+  <div class="tools">
+    <label class="lang"><span aria-hidden="true">🌐</span>
+      <select id="langSel" data-i18n-aria="language" aria-label="Language">
+        <option value="en">English</option><option value="ta">தமிழ்</option><option value="hi">हिन्दी</option>
+      </select></label>
+    <button id="themeBtn" class="theme" data-i18n-aria="theme" aria-label="Toggle theme" aria-pressed="false">
+      <span class="knob"></span><span class="ic sun">☀️</span><span class="ic moon">🌙</span></button>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <h1 data-i18n="title">AI-Based Plant Disease Detection</h1>
+    <p data-i18n="desc"></p>
+  </section>
+
+  <section class="card panel">
+    <div id="dropZone" class="drop" tabindex="0" role="button" data-i18n-aria="drop">
+      <div class="leafmark" aria-hidden="true">🍃</div>
+      <p class="big" data-i18n="drop"></p>
+      <p class="muted" data-i18n="or"></p>
+      <div class="row">
+        <button id="pickBtn" class="btn primary" type="button" data-i18n="upload"></button>
+        <button id="camBtn" class="btn ghost" type="button">📷 <span data-i18n="camera"></span></button>
+      </div>
+      <p class="muted small" data-i18n="hint"></p>
+    </div>
+    <input id="fileInput" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+    <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
+
+    <div id="previewBox" class="preview" hidden>
+      <img id="previewImg" alt="" data-i18n-aria="preview">
+      <div class="row">
+        <button id="detectBtn" class="btn primary" type="button"><span class="spin" aria-hidden="true"></span><span id="detectLabel" data-i18n="detect"></span></button>
+        <button id="removeBtn" class="btn ghost" type="button" data-i18n="change"></button>
+      </div>
+    </div>
+
+    <div id="errorBox" class="msg err" role="alert" hidden></div>
+
+    <div id="invalidBox" class="msg invalid" role="alert" hidden>
+      <strong>❌ <span data-i18n="invalidTitle"></span></strong>
+      <p data-i18n="invalidMsg"></p>
+    </div>
+  </section>
+
+  <section id="resultCard" class="card result" hidden aria-live="polite">
+    <h2 data-i18n="result"></h2>
+    <div class="grid">
+      <div class="gauge">
+        <svg viewBox="0 0 120 120" aria-hidden="true"><circle class="trk" cx="60" cy="60" r="52"/><circle id="gaugeArc" class="arc" cx="60" cy="60" r="52"/></svg>
+        <div class="gv"><b id="rPct">0%</b><span data-i18n="confidence"></span></div>
+      </div>
+      <dl class="facts">
+        <div><dt>🌱 <span data-i18n="plant"></span></dt><dd id="rPlant"></dd></div>
+        <div><dt>🦠 <span data-i18n="disease"></span></dt><dd id="rDisease" class="strong"></dd></div>
+      </dl>
+    </div>
+    <div class="tips">
+      <article class="tip tip-action">
+        <h3><span class="tip-ic" aria-hidden="true">💡</span><span data-i18n="action"></span></h3>
+        <ul id="rAction" class="bl"></ul>
+      </article>
+      <article class="tip tip-prev">
+        <h3><span class="tip-ic" aria-hidden="true">🛡️</span><span data-i18n="prevention"></span></h3>
+        <ul id="rPrev" class="bl"></ul>
+      </article>
+    </div>
+    <button id="againBtn" class="btn ghost" type="button" data-i18n="again"></button>
+  </section>
+</main>
+<footer class="ftr" data-i18n="footer"></footer>
+
+<script src="js/config.js"></script>
+<script src="js/i18n.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
