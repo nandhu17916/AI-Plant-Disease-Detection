@@ -16,7 +16,7 @@ import os
 import re
 
 import numpy as np
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from PIL import Image, UnidentifiedImageError
 
@@ -31,24 +31,55 @@ LANGS = ("en", "ta", "hi")
 DEFAULT_SIZE = (224, 224)      # used only if a model does not report its input size
 
 # Set to False if the model already contains a Rescaling / preprocessing layer.
-# The validator contains MobileNetV2 preprocess_input inside the model (TrueDivide 127.5 + Subtract 1),
-# so it expects RAW 0-255 pixels. Dividing by 255 here would preprocess twice.
-VALIDATOR_DIVIDE_BY_255 = False
+VALIDATOR_DIVIDE_BY_255 = True   # skipped automatically if the model already has a Rescaling layer
 DISEASE_DIVIDE_BY_255 = True
 
-# ---- Leaf validator settings (VERIFIED from the training notebook + model file) ----------
-# Training: image_dataset_from_directory(label_mode="binary") -> class_names = ['leaf', 'non_leaf']
-#           so leaf = 0, non_leaf = 1, and Dense(1, sigmoid) outputs P(NON-LEAF).
-#           (The notebook's own check also uses: prediction < 0.5 -> LEAF.)
-VALIDATOR_OUTPUT_MEANS = "non_leaf"   # sigmoid output close to 1.0 = NON-LEAF
-LEAF_CLASS_INDEX = 1                  # only used if the validator had 2 output neurons (it has 1)
-LEAF_THRESHOLD = 0.5                  # leaf_score = 1 - output; leaf_score >= 0.5 -> LEAF
+# ---- Leaf validator semantics -------------------------------------------------
+# VERIFY against your validator training code. Keras flow_from_directory numbers classes
+# ALPHABETICALLY by folder name, so folders like "leaf" / "non_leaf" (or "leaf" / "not_leaf")
+# give leaf=0, non_leaf=1, which makes a single sigmoid output = P(NON-LEAF), not P(leaf).
+# What does a single sigmoid output close to 1.0 mean?  "leaf"  or  "non_leaf"
+VALIDATOR_OUTPUT_MEANS = "non_leaf"   # UNVERIFIED default - confirm with the VALIDATOR DEBUG log
+LEAF_CLASS_INDEX = 1                  # only used if the validator has 2 output neurons (softmax)
+LEAF_THRESHOLD = 0.5                  # leaf_score >= threshold -> LEAF
 DEBUG_VALIDATOR = True                # prints VALIDATOR DEBUG lines in the terminal
-# Call /predict?debug=1 (or send form field debug=1) to also get "validator_debug" in the JSON.
+# Send form field debug=1 with /predict to also get "validator_debug" in the JSON response.
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
 CORS(app)
+
+# ============================================================ FRONTEND
+# Serve the frontend files from the project root on Render.
+@app.get("/")
+def home():
+    return send_from_directory(BASE_DIR, "index.html")
+
+
+@app.get("/styles.css")
+def styles():
+    return send_from_directory(BASE_DIR, "styles.css")
+
+
+@app.get("/style.css")
+def style():
+    return send_from_directory(BASE_DIR, "style.css")
+
+
+@app.get("/app.js")
+def app_js():
+    return send_from_directory(BASE_DIR, "app.js")
+
+
+@app.get("/i18n.js")
+def i18n_js():
+    return send_from_directory(BASE_DIR, "i18n.js")
+
+
+@app.get("/config.js")
+def config_js():
+    return send_from_directory(BASE_DIR, "config.js")
+
 
 # ============================================================ KNOWLEDGE BASE (15 classes)
 PLANTS = {
@@ -216,14 +247,13 @@ def describe_validator(model):
     print("=== VALIDATOR MODEL ===")
     print(f"input_shape={model.input_shape} output_shape={model.output_shape} last_layer_activation={act}")
     pre = [l.name for l in _walk_layers(model)
-           if type(l).__name__ in ("Rescaling", "Normalization", "TrueDivide", "Subtract")
-           or "preprocess" in l.name.lower()]
-    validator_scale = VALIDATOR_DIVIDE_BY_255
-    if pre and validator_scale:
+           if type(l).__name__ in ("Rescaling", "Normalization") or "preprocess" in l.name.lower()]
+    if pre and VALIDATOR_DIVIDE_BY_255:
         validator_scale = False
-        print(f"[WARN] Validator already contains preprocessing layers {pre}; NOT dividing by 255 again.")
-    print(f"[INFO] Validator built-in preprocessing layers: {pre}")
-    print(f"[INFO] Validator input scaling: divide_by_255={validator_scale} (False = raw 0-255 pixels)")
+        print(f"[INFO] Validator already contains preprocessing layers {pre}; NOT dividing by 255 again.")
+    else:
+        validator_scale = VALIDATOR_DIVIDE_BY_255
+        print(f"[INFO] Validator input scaling: divide_by_255={validator_scale}")
     print(f"[INFO] Single-output meaning = P({VALIDATOR_OUTPUT_MEANS}), threshold={LEAF_THRESHOLD}")
 
 
@@ -328,12 +358,6 @@ def predict():
     raw = validator.predict(preprocess(image, validator, validator_scale), verbose=0)
     leaf_score, out = leaf_score_from(raw)
     is_leaf = leaf_score >= LEAF_THRESHOLD
-    debug_info = {
-        "raw_output": out.tolist(),
-        "leaf_score": round(leaf_score, 4),
-        "threshold": LEAF_THRESHOLD,
-        "decision": "LEAF" if is_leaf else "NON-LEAF",
-    }
     if DEBUG_VALIDATOR:
         print("VALIDATOR DEBUG:")
         print(f"  raw_output = {out.tolist()}")
@@ -341,51 +365,10 @@ def predict():
         print(f"  decision   = {'LEAF' if is_leaf else 'NON-LEAF'}")
     if not is_leaf:
         body = {"valid_leaf": False, "message": "This image does not appear to be a plant leaf."}
-        if request.values.get("debug") == "1":
-            body["validator_debug"] = debug_info
+        if request.form.get("debug") == "1":
+            body["validator_debug"] = {"raw_output": out.tolist(), "leaf_score": round(leaf_score, 4)}
         return jsonify(body)
 
     # 2) Disease prediction (15 classes)
     probs = np.ravel(
-        disease_model.predict(preprocess(image, disease_model, DISEASE_DIVIDE_BY_255), verbose=0)
-    )
-    idx = int(np.argmax(probs))
-    if idx >= len(class_names):
-        return error("class_names.json does not match leaf_model.keras.", 500)
-
-    name = class_names[idx]
-    plant_id, disease_id = identify(name)
-    if plant_id and disease_id:
-        category, disease_names = DISEASES[disease_id]
-        plant = PLANTS[plant_id][lang]
-        disease = disease_names[lang]
-        action = ADVICE[category]["action"][lang]
-        prevention = ADVICE[category]["prevention"][lang]
-    else:
-        plant, disease = readable(name), readable(name)
-        action = FALLBACK_ADVICE["action"][lang]
-        prevention = FALLBACK_ADVICE["prevention"][lang]
-
-    body = {
-        "valid_leaf": True,
-        "plant": plant,
-        "disease": disease,
-        "confidence": round(float(probs[idx]) * 100, 2),
-        "action": action,
-        "prevention": prevention,
-    }
-    if request.values.get("debug") == "1":
-        body["validator_debug"] = debug_info
-    return jsonify(body)
-
-
-@app.errorhandler(413)
-def too_large(_):
-    return error(f"Image too large. Maximum size is {MAX_UPLOAD_MB} MB.", 413)
-
-
-# ============================================================ RUN
-load_assets()
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
+     
